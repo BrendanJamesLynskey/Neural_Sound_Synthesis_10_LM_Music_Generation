@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Sound Synthesis · Part 10 — Language-Model Music Generation</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+  onload="renderMathInElement(document.body, {delimiters:[{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false}],throwOnError:false});"></script>
+<style>
+:root {
+  --bg: #0a0b0f;
+  --bg2: #12141c;
+  --bg3: #1a1d2a;
+  --fg: #d4d6e0;
+  --fg-dim: #8a8d9a;
+  --accent: #e8c256;
+  --accent2: #8b7bf0;
+  --accent3: #5ce89a;
+  --accent4: #e85a7a;
+  --accent5: #e8a44a;
+  --border: #2a2d3a;
+  --glow: rgba(74,199,232,0.15);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;font-size:16px}
+body{background:var(--bg);color:var(--fg);font-family:'Palatino Linotype','Book Antiqua',Palatino,'Georgia',serif;line-height:1.75;overflow-x:hidden}
+::selection{background:var(--accent);color:var(--bg)}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent;transition:border-color .2s}
+a:hover{border-bottom-color:var(--accent)}
+
+header{min-height:100vh;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:2rem;position:relative;overflow:hidden}
+header canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;opacity:.5}
+header .content{position:relative;z-index:1;max-width:880px}
+header .eyebrow{font-family:'Lucida Console',Monaco,monospace;font-size:.8rem;letter-spacing:.3em;text-transform:uppercase;color:var(--accent2);margin-bottom:1.4em}
+header h1{font-size:clamp(2rem,5vw,3.4rem);font-weight:300;letter-spacing:.04em;color:var(--accent);text-shadow:0 0 60px rgba(74,199,232,.3);margin-bottom:.3em}
+header h1 em{font-style:italic;color:var(--fg);font-weight:400}
+header .subtitle{font-size:1.12rem;color:var(--fg-dim);max-width:680px;margin:0 auto 2em}
+header .people{display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;margin-bottom:2em}
+header .people span{font-size:.85rem;color:var(--fg);padding:.35em .9em;border:1px solid var(--border);border-radius:2px;background:rgba(26,29,42,.7)}
+header .cta{display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap}
+
+nav#toc{position:sticky;top:0;z-index:100;background:rgba(10,11,15,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:.6rem 1rem;overflow-x:auto;white-space:nowrap;text-align:center}
+nav#toc a{display:inline-block;font-size:.78rem;color:var(--fg-dim);padding:.3em .7em;margin:0 .1em;letter-spacing:.04em;text-transform:uppercase;font-family:'Lucida Console',Monaco,monospace;transition:color .2s;border-bottom:none}
+nav#toc a:hover,nav#toc a.active{color:var(--accent)}
+
+section{max-width:920px;margin:0 auto;padding:4rem 1.5rem;border-bottom:1px solid var(--border)}
+section:last-of-type{border-bottom:none}
+h2{font-size:clamp(1.5rem,3vw,2.2rem);font-weight:300;color:var(--accent);margin-bottom:.3em;letter-spacing:.03em}
+h2 .num{font-family:'Lucida Console',Monaco,monospace;font-size:.7em;color:var(--fg-dim);margin-right:.5em}
+h3{font-size:1.2rem;color:var(--accent2);margin:2em 0 .5em;font-weight:400}
+h4{font-size:1rem;color:var(--accent3);margin:1.5em 0 .3em;font-weight:400}
+p{margin-bottom:1.2em}
+ul,ol{padding-left:1.4em;margin-bottom:1.2em}
+li{margin-bottom:.5em}
+.lead{font-size:1.08rem;color:var(--fg);margin-bottom:1.5em}
+
+.viz{margin:2em 0;background:var(--bg2);border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.viz canvas{display:block;width:100%;cursor:crosshair}
+.viz-caption{font-size:.8rem;color:var(--fg-dim);padding:.6em 1em;border-top:1px solid var(--border);font-family:'Lucida Console',Monaco,monospace}
+
+.controls{display:flex;flex-wrap:wrap;gap:.8rem;padding:.8em 1em;background:var(--bg3);border-top:1px solid var(--border);align-items:center}
+.controls label{font-size:.78rem;color:var(--fg-dim);font-family:'Lucida Console',Monaco,monospace;display:flex;align-items:center;gap:.4em}
+.controls input[type="range"]{width:120px;accent-color:var(--accent)}
+.controls select{background:var(--bg);color:var(--fg);border:1px solid var(--border);padding:.3em .5em;font-size:.78rem;border-radius:2px;font-family:inherit}
+.controls button,.btn{background:var(--accent);color:var(--bg);border:none;padding:.45em 1em;font-size:.78rem;font-family:'Lucida Console',Monaco,monospace;cursor:pointer;border-radius:2px;letter-spacing:.03em;transition:background .2s}
+.controls button:hover,.btn:hover{background:#6fd4ef}
+.btn-outline{background:transparent;border:1px solid var(--accent);color:var(--accent)}
+.btn-outline:hover{background:var(--accent);color:var(--bg)}
+.controls .val{color:var(--accent);font-family:'Lucida Console',monospace;font-size:.78rem;min-width:2.5em;display:inline-block}
+.tabrow{display:flex;gap:.3em;flex-wrap:wrap}
+.tabrow button{background:var(--bg);border:1px solid var(--border);color:var(--fg-dim)}
+.tabrow button.on{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+
+.math{display:block;text-align:center;padding:1.4em 1.2em;margin:1.5em 0;background:var(--bg2);border-left:3px solid var(--accent);font-size:1.1rem;color:var(--fg);overflow-x:auto;border-radius:0 4px 4px 0}
+.math .katex{font-size:1.2em}
+.math-inline .katex{font-size:1.0em}
+
+.timeline{position:relative;padding:1em 0 1em 2em;margin:2em 0}
+.timeline::before{content:'';position:absolute;left:.6em;top:0;bottom:0;width:2px;background:var(--border)}
+.timeline-item{position:relative;margin-bottom:1.8em;padding-left:1.5em}
+.timeline-item::before{content:'';position:absolute;left:-1.95em;top:.4em;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
+.timeline-year{font-family:'Lucida Console',Monaco,monospace;color:var(--accent);font-size:.85rem;margin-bottom:.2em}
+.timeline-text{font-size:.95rem;color:var(--fg-dim)}
+.timeline-text strong{color:var(--fg)}
+
+blockquote{border-left:3px solid var(--accent5);padding:.8em 1.2em;margin:1.5em 0;color:var(--fg-dim);font-style:italic;background:rgba(232,164,74,.05)}
+blockquote cite{display:block;font-size:.85rem;color:var(--accent5);margin-top:.5em;font-style:normal}
+
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1.5em;margin:1.5em 0}
+@media(max-width:700px){.grid-2{grid-template-columns:1fr}}
+
+.references{margin-top:2em;padding:1.5em;background:var(--bg2);border:1px solid var(--border);border-radius:4px}
+.references h3{margin-top:0}
+.references ol{padding-left:1.5em}
+.references li{font-size:.85rem;color:var(--fg-dim);margin-bottom:.5em;line-height:1.5}
+.references li em{color:var(--fg)}
+
+footer{text-align:center;padding:3em 1.5em;color:var(--fg-dim);font-size:.85rem;border-top:1px solid var(--border)}
+footer a{color:var(--accent2)}
+
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--fg-dim)}
+
+.expandable{margin:1.5em 0;border:1px solid var(--border);border-radius:4px;overflow:hidden}
+.expandable summary{padding:.8em 1.2em;background:var(--bg3);cursor:pointer;font-size:.9rem;color:var(--accent2);font-family:'Lucida Console',Monaco,monospace;letter-spacing:.03em;list-style:none;display:flex;align-items:center;gap:.5em}
+.expandable summary::before{content:'>';font-size:.7em;transition:transform .2s}
+details[open] summary::before{transform:rotate(90deg)}
+.expandable summary:hover{color:var(--fg)}
+.expandable .inner{padding:1.2em 1.4em;background:rgba(139,123,240,.04)}
+.expandable .inner p:last-child{margin-bottom:0}
+
+.note{font-size:.9rem;color:var(--fg-dim);margin:1em 0;padding:.6em 1em;border-left:2px solid var(--accent3);background:rgba(92,232,154,.05)}
+.warn{font-size:.9rem;color:var(--fg-dim);margin:1em 0;padding:.6em 1em;border-left:2px solid var(--accent4);background:rgba(232,90,122,.05)}
+.note strong,.warn strong{color:var(--fg)}
+
+table{width:100%;border-collapse:collapse;margin:1.5em 0;font-size:.9rem}
+th,td{padding:.5em .8em;border:1px solid var(--border);text-align:left;vertical-align:top}
+th{background:var(--bg3);color:var(--accent2);font-weight:400;font-family:'Lucida Console',Monaco,monospace;font-size:.76rem;letter-spacing:.03em}
+td{color:var(--fg-dim)}
+td code,p code,li code{font-family:'Lucida Console',Monaco,monospace;font-size:.85em;color:var(--accent3);background:rgba(92,232,154,.07);padding:.05em .3em;border-radius:2px}
+
+.xref{display:flex;flex-wrap:wrap;gap:.6em;margin:1.5em 0}
+.xref a{font-size:.8rem;padding:.5em 1em;border:1px solid var(--border);background:var(--bg3);font-family:'Lucida Console',Monaco,monospace;color:var(--fg-dim);border-bottom:none;border-radius:3px;transition:all .2s}
+.xref a:hover{color:var(--accent);border-color:var(--accent)}
+.xref a .k{display:block;font-size:.62rem;letter-spacing:.12em;color:var(--accent);margin-bottom:.2em}
+
+.pill{display:inline-block;font-family:'Lucida Console',monospace;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;padding:.15em .55em;border-radius:2px;border:1px solid var(--border);color:var(--fg-dim);margin-left:.4em;vertical-align:middle}
+</style>
+</head>
+<body>
+
+<header>
+  <canvas id="heroCanvas"></canvas>
+  <div class="content">
+    <div class="eyebrow">Neural Sound Synthesis &middot; Part 10 of 12</div>
+    <h1>Language-Model <em>Music Generation</em></h1>
+    <p class="subtitle">
+      Once a neural codec has turned sound into a stream of discrete integers, a
+      transformer can model audio exactly the way GPT models text — next-token prediction,
+      cross-entropy, sampling with temperature. This part follows that single idea from
+      AudioLM's semantic-plus-acoustic hierarchy to MusicGen's codebook-interleaving trick,
+      and asks you to generate a melody token by token. Three live demos throughout.
+    </p>
+    <div class="people">
+      <span>AudioLM &middot; MusicLM &middot; MusicGen</span>
+      <span>Jukebox &middot; VALL-E</span>
+      <span>Semantic &middot; Acoustic tokens</span>
+      <span>Temperature &middot; Top-k &middot; CFG</span>
+    </div>
+    <div class="cta">
+      <a href="#paradigm" class="btn">Begin &#8595;</a>
+      <a href="https://brendanjameslynskey.github.io/Neural_Sound_Synthesis/" class="btn btn-outline" target="_blank" rel="noopener">Series hub</a>
+    </div>
+  </div>
+</header>
+
+<nav id="toc">
+  <a href="#paradigm">1 &middot; Audio as Language</a>
+  <a href="#sampling">2 &middot; Sampling</a>
+  <a href="#audiolm">3 &middot; AudioLM</a>
+  <a href="#musiclm">4 &middot; MusicLM</a>
+  <a href="#musicgen">5 &middot; MusicGen</a>
+  <a href="#cousins">6 &middot; Jukebox &amp; VALL-E</a>
+  <a href="#timeline">7 &middot; Timeline</a>
+  <a href="#next">Next</a>
+</nav>
+
+<!-- ============================================================ -->
+<section id="paradigm">
+  <h2><span class="num">1</span>Audio as a language — the paradigm that unlocked everything</h2>
+  <p class="lead">
+    Part 9 ended with a neural codec — SoundStream, EnCodec — that maps a second of audio to
+    a few dozen frames, each frame a handful of integers drawn from small learned codebooks.
+    That single change reframes the whole problem. Audio is no longer a
+    forty-thousand-dimensional continuous object; it is a <em>sequence of tokens over a finite
+    vocabulary</em>, and we already own the most successful sequence model ever built: the
+    autoregressive transformer.
+  </p>
+  <p>
+    The recipe is now identical to language modelling. Let $z = (z_1,\dots,z_T)$ be the token
+    stream a codec emits for a clip. A transformer factorises its joint distribution the same
+    way GPT factorises a sentence — one conditional at a time, strictly left to right:
+  </p>
+  <div class="math">
+    $$p_\theta(z) = \prod_{t=1}^{T} p_\theta\!\left(z_t \mid z_{1},\dots,z_{t-1}\right)$$
+  </div>
+  <p>
+    and we train it by minimising exactly the cross-entropy that trains a chatbot — the
+    negative log-likelihood of each true next token given its history:
+  </p>
+  <div class="math">
+    $$\mathcal{L}(\theta) = -\,\mathbb{E}_{z\sim\mathcal{D}}\sum_{t=1}^{T}\log p_\theta\!\left(z_t \mid z_{<t}\right)$$
+  </div>
+  <p>
+    Nothing in either equation knows or cares that the tokens denote sound rather than words.
+    That is the entire conceptual leap of this part: <strong>generation becomes a
+    vocabulary problem</strong>. Everything the NLP community discovered — scaling laws,
+    temperature sampling, top-k / top-p truncation, classifier-free guidance for conditioning,
+    KV-caching for fast decoding — transfers wholesale to audio the moment the codec exists.
+  </p>
+
+  <div class="grid-2">
+    <div class="note"><strong>Why this is not obvious.</strong> Text tokens are (mostly)
+    semantically meaningful and there are ~50k of them. Codec tokens are perceptual fragments
+    with <em>no</em> standalone meaning, there can be several parallel streams per frame, and a
+    single wrong token is an audible glitch, not a typo. The models below are largely about
+    taming those three differences.</div>
+    <div class="warn"><strong>The two-stage tax.</strong> The LM never touches a waveform. It
+    predicts tokens; the codec's decoder renders them to sound. Quality is therefore capped by
+    the codec (Part 9), and the decoder can hallucinate detail the LM never specified — the same
+    tension every token-domain model inherits.</div>
+  </div>
+
+  <p>
+    The rest of this part is the family tree that grew from that leaf. <strong>AudioLM</strong>
+    split the stream into a semantic and an acoustic hierarchy for long-term coherence.
+    <strong>MusicLM</strong> hung a text encoder in front of it. <strong>MusicGen</strong>
+    collapsed the hierarchy into one transformer over parallel codebooks with a clever
+    interleaving pattern. <strong>Jukebox</strong> did it at the scale of whole raw-audio songs
+    with lyrics; <strong>VALL-E</strong> did it for zero-shot voice cloning. One idea, five
+    landmark systems.
+  </p>
+</section>
+
+<!-- ============================================================ -->
+<section id="sampling">
+  <h2><span class="num">2</span>Sampling the token stream — and a transformer you can play</h2>
+  <p class="lead">
+    Training gives a distribution; <em>generation</em> is repeatedly drawing from it and
+    feeding the draw back in. The knob that governs the character of the output is
+    <strong>temperature</strong>, applied to the logits before the softmax. It is the single
+    most important control in this entire field, so the demo below lets you hear it directly.
+  </p>
+  <p>
+    Given logits $u_i$ over the vocabulary, temperature $\tau$ rescales them before
+    normalising:
+  </p>
+  <div class="math">
+    $$p_i = \frac{\exp(u_i/\tau)}{\sum_j \exp(u_j/\tau)}$$
+  </div>
+  <p>
+    As $\tau\to 0$ the distribution collapses onto its mode — <em>greedy</em>, deterministic,
+    often repetitive. At $\tau = 1$ you sample the model's raw beliefs. As $\tau\to\infty$ it
+    flattens to uniform — pure noise. Between them lies the usable band where music sounds
+    intentional but not mechanical. On top of temperature, two truncation tricks discard the
+    unreliable tail:
+  </p>
+  <ul>
+    <li><strong>Top-$k$</strong> — keep only the $k$ most probable tokens, renormalise, sample.
+    Caps the worst mistakes at the cost of a fixed budget.</li>
+    <li><strong>Top-$p$ (nucleus)</strong> — keep the smallest set whose cumulative
+    probability exceeds $p$; the set size adapts to how peaked the step is.</li>
+  </ul>
+
+  <h3>A real autoregressive melody generator</h3>
+  <p>
+    The demo is a genuine token-LM in miniature. It learns a bigram transition table from a
+    couple of built-in seed melodies over a musical token vocabulary — pitch tokens on a chosen
+    scale, plus a <code>REST</code> and a <code>SUSTAIN</code> (tie) token — then samples a new
+    sequence <em>one token at a time</em>, each token conditioned on the last, with your
+    temperature applied to the transition row. It maps the tokens to notes and plays them, and
+    shows both the raw token stream and the resulting piano-roll. This is exactly the loop a
+    codec-token LM runs, shrunk to something you can inspect.
+  </p>
+
+  <div class="viz">
+    <canvas id="melViz" height="330" aria-label="autoregressive token melody generator: token stream and piano roll"></canvas>
+    <div class="controls">
+      <label>scale
+        <select id="melScale">
+          <option value="penta">major pentatonic</option>
+          <option value="minor">natural minor</option>
+          <option value="dorian">dorian</option>
+          <option value="whole">whole-tone</option>
+        </select>
+      </label>
+      <label>seed
+        <select id="melSeed">
+          <option value="folk">folk tune</option>
+          <option value="arp">arpeggios</option>
+          <option value="both">both corpora</option>
+        </select>
+      </label>
+      <label>temperature <input type="range" id="melTemp" min="0.05" max="2" step="0.05" value="0.9"><span class="val" id="melTempV">0.90</span></label>
+      <button id="melGen">▶ Generate + play</button>
+      <button id="melPlay" class="btn-outline">▶ Replay</button>
+    </div>
+    <div class="viz-caption" id="melCap">Top: the sampled token stream (pitch · R = rest · ~ = sustain). Bottom: the piano-roll it renders to. Drag temperature from 0.05 (greedy) to 2 (chaos).</div>
+  </div>
+
+  <p class="note">
+    <strong>Try this:</strong> set temperature to <code>0.05</code> and hit Generate a few
+    times — the sampler is near-greedy, so it keeps falling into the same short loop the seeds
+    made most likely. Push to <code>0.9</code> and it improvises recognisable phrases in the
+    scale. Push to <code>2.0</code> and it wanders atonally, resting and leaping at random. Same
+    model, same seeds — only the sharpness of the draw changed.
+  </p>
+
+  <h3>Conditioning: classifier-free guidance</h3>
+  <p>
+    Text-to-music needs the distribution steered by a prompt $c$. The dominant trick, borrowed
+    from diffusion, is <strong>classifier-free guidance</strong>: train the same model both with
+    the condition and with it dropped (a null token $\varnothing$), then at inference push the
+    logits <em>away</em> from the unconditional prediction and toward the conditional one by a
+    guidance weight $w$:
+  </p>
+  <div class="math">
+    $$\ell_{\text{cfg}} = \ell_\theta(z_t \mid z_{<t}, \varnothing) + w\,\big[\ell_\theta(z_t \mid z_{<t}, c) - \ell_\theta(z_t \mid z_{<t}, \varnothing)\big]$$
+  </div>
+  <p>
+    Larger $w$ makes the output cling harder to the prompt at some cost to diversity and
+    naturalness — the same quality/adherence dial you feel in any text-to-image system, now over
+    audio tokens.
+  </p>
+
+  <details class="expandable"><summary>derivation · why temperature is a precision knob on the categorical</summary>
+    <div class="inner">
+      <p>Write the softmax with an inverse-temperature $\beta = 1/\tau$. Then
+      $p_i \propto \exp(\beta u_i)$, which is exactly a Boltzmann distribution at "temperature"
+      $\tau$. Two limits fall straight out. As $\beta\to\infty$ ($\tau\to 0$) the ratio of any
+      non-maximal probability to the maximal one,</p>
+      <div class="math">$$\frac{p_i}{p_{\max}} = \exp\!\big(\beta\,(u_i - u_{\max})\big) \longrightarrow 0,$$</div>
+      <p>so all mass concentrates on $\arg\max_i u_i$ — greedy decoding. As $\beta\to 0$
+      ($\tau\to\infty$) every $\exp(\beta u_i)\to 1$ and $p_i \to 1/V$ — uniform. The demo works
+      on counts rather than logits, which is the same statement with $u_i = \log(\text{count}_i)$:
+      raising a probability to the power $1/\tau$ and renormalising sharpens ($\tau<1$) or
+      flattens ($\tau>1$) it identically. That equivalence is why a bigram over seed melodies is
+      a faithful, if tiny, stand-in for a transformer over codec tokens: only the source of the
+      logits differs.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ============================================================ -->
+<section id="audiolm">
+  <h2><span class="num">3</span>AudioLM — the semantic + acoustic hierarchy</h2>
+  <p class="lead">
+    A single codec-token LM has a problem: EnCodec-style tokens are optimised for
+    <em>reconstruction fidelity</em>, not linguistic structure, so a raw LM over them drifts —
+    it keeps the timbre but loses the tune over a few seconds. AudioLM (Borsos et&nbsp;al., 2022)
+    solved this by predicting audio in <strong>two kinds of token, in coarse-to-fine order</strong>.
+  </p>
+  <div class="grid-2">
+    <div>
+      <h4>Semantic tokens — the plan</h4>
+      <p>Discretised (k-means) activations of a self-supervised model, <strong>w2v-BERT</strong>.
+      They are sampled slowly (~25&nbsp;Hz) and capture <em>long-term structure</em>: phonetics,
+      melody, rhythm, prosody. They sound terrible if decoded alone — they carry the plan, not the
+      audio.</p>
+    </div>
+    <div>
+      <h4>Acoustic tokens — the render</h4>
+      <p>The RVQ codes of a <strong>SoundStream</strong> codec, several per frame across quantiser
+      levels. They carry <em>fidelity</em>: speaker identity, timbre, recording conditions, fine
+      spectral detail — everything needed to reconstruct a convincing waveform.</p>
+    </div>
+  </div>
+  <p>
+    Generation runs as a cascade of three transformer stages. First a <em>semantic</em> stage
+    models $p(s_{1:T})$ — the long-horizon plan. Then a <em>coarse acoustic</em> stage predicts the
+    first few RVQ levels conditioned on the full semantic sequence, and finally a <em>fine
+    acoustic</em> stage fills the remaining RVQ levels. Coarse-to-fine, plan-then-render:
+  </p>
+  <div class="math">
+    $$p(s,a) = \underbrace{p(s_{1:T})}_{\text{semantic}} \; \underbrace{p\!\left(a^{\le q_c}_{1:T}\mid s_{1:T}\right)}_{\text{coarse acoustic}} \; \underbrace{p\!\left(a^{> q_c}_{1:T}\mid a^{\le q_c}_{1:T}\right)}_{\text{fine acoustic}}$$
+  </div>
+  <p>
+    Because the slow semantic stream commits to the structure first, the acoustic stages only
+    have to <em>render</em> it — and the result stays coherent for far longer than a flat
+    codec-token LM. AudioLM could continue a piano piece or a spoken sentence for many seconds
+    while keeping the melody, speaker and syntax intact, all trained with no transcripts or labels.
+    Explore the two-stage stack below.
+  </p>
+
+  <div class="viz">
+    <canvas id="hierViz" height="320" aria-label="AudioLM semantic and acoustic RVQ token hierarchy generated coarse to fine"></canvas>
+    <div class="controls">
+      <label>RVQ levels <input type="range" id="hierQ" min="2" max="8" step="1" value="4"><span class="val" id="hierQV">4</span></label>
+      <label>progress <input type="range" id="hierProg" min="0" max="1000" step="1" value="1000"></label>
+      <button id="hierPlay">▶ Generate order</button>
+      <span style="font-size:.72rem;color:var(--fg-dim);font-family:'Lucida Console',monospace">hover a cell →</span>
+    </div>
+    <div class="viz-caption" id="hierCap">Semantic tokens are generated first (whole row), then each acoustic RVQ level in turn, coarse to fine. Hover any cell to see what that level carries.</div>
+  </div>
+  <div class="note">
+    <strong>Read the order.</strong> The top row fills completely before any acoustic token
+    appears — the model decides <em>what</em> happens across the whole clip before deciding
+    <em>how it sounds</em>. Within the acoustic block, level 1 (coarsest, most perceptually
+    significant) is committed before the fine levels refine it. That is the RVQ residual ordering
+    of Part 9, now used as a generation schedule.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="musiclm">
+  <h2><span class="num">4</span>MusicLM — text conditioning by borrowing an embedding</h2>
+  <p class="lead">
+    AudioLM is unconditional: it continues audio, it does not follow a prompt. MusicLM (Agostinelli
+    et&nbsp;al., 2023) turned it into a text-to-music system with one addition — a joint
+    <em>text–audio</em> embedding space that lets a caption stand in for the missing audio context.
+  </p>
+  <p>
+    That embedding is <strong>MuLan</strong>, a contrastive model (a CLIP for music) trained on
+    millions of tracks paired with free-form text so that a caption and a matching clip land near
+    each other. At training time MusicLM conditions on MuLan's <em>audio</em> embedding of the
+    target; at inference it swaps in the MuLan <em>text</em> embedding of the prompt — the shared
+    space makes the substitution nearly seamless, and no captioned music is needed to train the
+    generative stages at all.
+  </p>
+  <div class="math">
+    $$M_{\text{text}}(\text{"a calm violin melody"}) \;\approx\; M_{\text{audio}}(\text{matching clip}) \;\Rightarrow\; p\big(\text{semantic},\text{acoustic}\mid M\big)$$
+  </div>
+  <p>
+    The generative core is AudioLM's hierarchy, extended to a three-level conditioning cascade:
+    the MuLan token conditions a <em>semantic</em> stage, which conditions a <em>coarse acoustic</em>
+    stage, which conditions a <em>fine acoustic</em> stage. MusicLM also shipped MusicCaps, a
+    benchmark of expert-written captions, and demonstrated melody conditioning — hum a tune, describe
+    a style, get the tune rendered in that style.
+  </p>
+  <table>
+    <thead><tr><th>System</th><th>Conditioning</th><th>Token hierarchy</th><th>Signature idea</th></tr></thead>
+    <tbody>
+      <tr><td><strong style="color:var(--accent)">AudioLM</strong></td><td>none (continuation)</td><td>semantic → coarse → fine</td><td>self-supervised semantic tokens for long-term coherence</td></tr>
+      <tr><td><strong style="color:var(--accent2)">MusicLM</strong></td><td>text / melody via MuLan</td><td>MuLan → semantic → coarse → fine</td><td>contrastive text–audio embedding as the prompt bridge</td></tr>
+      <tr><td><strong style="color:var(--accent3)">MusicGen</strong></td><td>text (T5) + melody</td><td>single stage, parallel codebooks</td><td>codebook-interleaving pattern + classifier-free guidance</td></tr>
+    </tbody>
+  </table>
+  <blockquote>
+    Notice the compression happening across these three rows. AudioLM needed three transformers and a
+    hand-built semantic/acoustic split. MusicLM added a fourth conditioning stage. MusicGen — next —
+    threw the hierarchy out and did it with <em>one</em> transformer. The field's arc in this part is
+    the steady collapse of a cascade into a single model.
+  </blockquote>
+</section>
+
+<!-- ============================================================ -->
+<section id="musicgen">
+  <h2><span class="num">5</span>MusicGen — one transformer over parallel codebooks</h2>
+  <p class="lead">
+    EnCodec emits $K$ codebook tokens <em>per frame</em> (the RVQ levels). A naive LM must
+    somehow model these parallel streams. MusicGen (Copet et&nbsp;al., 2023) does it with a
+    <strong>single</strong> autoregressive transformer and a <em>codebook-interleaving pattern</em>
+    that decides the order in which the $K\times T$ tokens are unrolled into one sequence. The
+    choice of pattern is the whole efficiency story.
+  </p>
+  <h3>Three ways to unroll a $K\times T$ grid</h3>
+  <ul>
+    <li><strong>Flatten</strong> — emit all $K$ codebooks of frame&nbsp;1, then all $K$ of frame&nbsp;2, … A perfect autoregressive factorisation, but the sequence is $K{\times}T$ long: $K$ times slower to generate.</li>
+    <li><strong>Parallel</strong> — predict all $K$ codebooks of a frame in <em>one</em> step. Only $T$ steps, but it wrongly assumes the $K$ codes of a frame are conditionally independent — and they are not, because they are RVQ <em>residuals</em> of one another.</li>
+    <li><strong>Delay</strong> — MusicGen's answer. Offset codebook $k$ by $k$ steps so that, at any decoding step, the coarse codes a frame depends on are already known. It costs only $T + K - 1$ steps yet respects the residual dependency.</li>
+  </ul>
+  <p>
+    Formally, if $z_{k,t}$ is the token at codebook $k$, frame $t$, the pattern is just a schedule
+    $s(k,t)$ giving the decoding step at which that token is produced:
+  </p>
+  <div class="math">
+    $$s_{\text{flatten}}(k,t) = tK + k,\qquad s_{\text{parallel}}(k,t) = t,\qquad s_{\text{delay}}(k,t) = t + k$$
+  </div>
+  <p>
+    The delay pattern turns a $K{\times}T$ problem that "should" take $KT$ steps into one that takes
+    $T{+}K{-}1$ — for $T=1500,\,K=4$ that is ~1503 steps instead of 6000, a near-$4\times$ speedup, with
+    almost no quality loss because the diagonal schedule still lets each fine code see the coarse codes
+    of its frame. Step through all three below.
+  </p>
+
+  <div class="viz">
+    <canvas id="ilvViz" height="300" aria-label="MusicGen codebook interleaving patterns: flatten, parallel, delay"></canvas>
+    <div class="controls">
+      <div class="tabrow" id="ilvTabs">
+        <button data-p="flatten" class="on">Flatten</button>
+        <button data-p="parallel">Parallel</button>
+        <button data-p="delay">Delay</button>
+      </div>
+      <label>codebooks K <input type="range" id="ilvK" min="2" max="8" step="1" value="4"><span class="val" id="ilvKV">4</span></label>
+      <label>decode step <input type="range" id="ilvStep" min="0" max="64" step="1" value="0"><span class="val" id="ilvStepV">0</span></label>
+      <button id="ilvPlay">▶ Step through</button>
+    </div>
+    <div class="viz-caption" id="ilvCap">Rows = RVQ codebooks, columns = frames. Bright cells are being predicted at this step; filled cells are already decoded. Watch the total step count change with the pattern.</div>
+  </div>
+
+  <p>
+    MusicGen conditions on text through a frozen <strong>T5</strong> encoder (cross-attention or
+    prefix), supports melody conditioning via a chromagram, and uses the classifier-free guidance of
+    §2 to trade prompt-adherence against diversity. One model, one stage, competitive with the
+    cascades — which is why it became the default open text-to-music baseline.
+  </p>
+
+  <details class="expandable"><summary>derivation · the delay pattern's step count and why it is nearly lossless</summary>
+    <div class="inner">
+      <p>Under the delay schedule $s(k,t) = t + k$ with $k\in\{0,\dots,K-1\}$ and
+      $t\in\{0,\dots,T-1\}$, the largest step index is $s_{\max} = (T-1) + (K-1)$, so the number of
+      decoding steps is</p>
+      <div class="math">$$N_{\text{delay}} = T + K - 1,$$</div>
+      <p>versus $N_{\text{flatten}} = TK$ and $N_{\text{parallel}} = T$. The speedup over flatten is
+      $TK/(T{+}K{-}1)\to K$ as $T\gg K$. The key property: at step $n$ the tokens emitted are
+      $\{z_{k,t}: t+k=n\}$, and each such token's frame-$t$ coarse neighbours $z_{k'<k,t}$ were emitted
+      at steps $t+k' < n$ — already known. So a fine residual is never predicted before the coarser
+      residuals it is a correction to, which is exactly the conditional structure RVQ assumes. Parallel
+      decoding violates this (it predicts all $k$ at once, pretending independence); flatten respects it
+      but pays the full $KT$. Delay is the diagonal that keeps the dependency while paying only
+      $T{+}K{-}1$ — the efficiency trick that lets a single LM model a multi-stream codec.</p>
+    </div>
+  </details>
+</section>
+
+<!-- ============================================================ -->
+<section id="cousins">
+  <h2><span class="num">6</span>Jukebox and VALL-E — the extremes of the same idea</h2>
+  <p class="lead">
+    Two systems bracket the token-LM family: one that predated the codec era and paid dearly for it,
+    and one that carried the recipe into speech and made voice cloning trivial.
+  </p>
+  <h3>Jukebox (Dhariwal et&nbsp;al., 2020) — the ambitious ancestor</h3>
+  <p>
+    Two years before AudioLM, OpenAI's Jukebox generated <em>whole songs with singing</em> directly
+    in raw audio. It built its own tokens with a <strong>multi-scale VQ-VAE</strong> — three levels
+    compressing raw audio by 8×, 32× and 128× — then trained <strong>sparse transformers</strong> as
+    autoregressive priors over each level, upsampling coarse tokens to fine. It conditioned on artist,
+    genre and even time-aligned <em>lyrics</em>, and it worked: recognisable songs in the style of
+    named artists, with words. The cost was brutal — coherence wandered over a song's length, and
+    rendering a minute of audio took hours, because its codec tokens were far less compressed and less
+    structured than the semantic/acoustic split that came later. Jukebox is the proof-of-concept whose
+    pain motivated everything in §§3–5.
+  </p>
+  <h3>VALL-E (Wang et&nbsp;al., 2023) — the speech cousin</h3>
+  <p>
+    VALL-E applied the MusicGen-shaped recipe to text-to-speech: an EnCodec token LM, with a text
+    prompt and a <em>3-second</em> enrolment clip of a target speaker as acoustic context. Because the
+    acoustic tokens carry timbre and the model does in-context learning, it reproduces an unseen
+    speaker's voice, prosody and even acoustic environment from those three seconds — <em>zero-shot</em>
+    voice cloning. It uses a hybrid schedule: an autoregressive model for the coarse codebook and a
+    non-autoregressive model for the rest, a close relative of MusicGen's interleaving. VALL-E is the
+    clearest evidence that "audio is a language" is a claim about <em>all</em> audio, not just music.
+  </p>
+  <div class="warn">
+    <strong>The dual-use edge.</strong> Zero-shot cloning from three seconds of audio is also a
+    deepfake engine. Every serious release in this line now ships with a watermarking or detection
+    plan; the capability and its misuse are the same model read two ways.
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="timeline">
+  <h2><span class="num">7</span>From Jukebox to MusicGen in three years</h2>
+  <p>
+    The token-LM approach to music went from a compute-devouring curiosity to an open, single-model
+    baseline in the span of three years — the moment good neural codecs (Part 9) arrived.
+  </p>
+  <div class="timeline">
+    <div class="timeline-item"><div class="timeline-year">2020</div><div class="timeline-text"><strong>Jukebox</strong> generates raw-audio songs with lyrics via a multi-scale VQ-VAE and sparse-transformer priors — proof that a token LM can sing, at ruinous cost. <span class="pill">Part 10</span></div></div>
+    <div class="timeline-item"><div class="timeline-year">2021&ndash;22</div><div class="timeline-text"><strong>SoundStream</strong> &amp; <strong>EnCodec</strong> deliver compact, structured RVQ tokens; <strong>AudioLM</strong> introduces the semantic + acoustic hierarchy for long-term-coherent, label-free continuation. <span class="pill">Part 9 · 10</span></div></div>
+    <div class="timeline-item"><div class="timeline-year">Jan 2023</div><div class="timeline-text"><strong>MusicLM</strong> adds MuLan text–audio embeddings for text-to-music; <strong>VALL-E</strong> ports the recipe to zero-shot text-to-speech voice cloning. <span class="pill">Part 10</span></div></div>
+    <div class="timeline-item"><div class="timeline-year">Jun 2023</div><div class="timeline-text"><strong>MusicGen</strong> collapses the cascade into a single transformer over EnCodec's parallel codebooks using the delay interleaving pattern, T5 text and melody conditioning, classifier-free guidance — open-sourced. <span class="pill">Part 10</span></div></div>
+    <div class="timeline-item"><div class="timeline-year">2023&rarr;</div><div class="timeline-text">Attention turns to the <strong>diffusion</strong> alternative for text-to-audio — continuous latents instead of discrete tokens, non-autoregressive, faster at length. <span class="pill">Part 11</span></div></div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="next">
+  <h2><span class="num">→</span>Where to go next</h2>
+  <p>
+    You have seen the second great paradigm of neural audio: once a codec discretises sound, a
+    transformer models it exactly like language — factorised left to right, trained by cross-entropy,
+    sampled with temperature, steered by guidance. AudioLM's hierarchy bought coherence, MusicLM bought
+    prompts, MusicGen bought a single efficient model. But discrete tokens are not the only game. Part 11
+    takes the other road entirely: diffusion in a <em>continuous</em> latent, generating audio in
+    parallel rather than one token at a time.
+  </p>
+  <div class="xref">
+    <a href="https://brendanjameslynskey.github.io/Neural_Sound_Synthesis/"><span class="k">Series hub</span>All twelve parts &middot; the interactive map</a>
+    <a href="https://brendanjameslynskey.github.io/Neural_Sound_Synthesis_09_Neural_Audio_Codecs/"><span class="k">Part 9 ←</span>Neural Audio Codecs &middot; where the tokens come from</a>
+    <a href="https://brendanjameslynskey.github.io/Neural_Sound_Synthesis_11_Latent_Diffusion_Text_to_Audio/"><span class="k">Part 11 →</span>Latent Diffusion for Text-to-Audio</a>
+    <a href="https://github.com/BrendanJamesLynskey/DSP_and_Music"><span class="k">Collection</span>DSP &amp; Music</a>
+  </div>
+  <div class="references">
+    <h3>References</h3>
+    <ol>
+      <li>Dhariwal, P., Jun, H., Payne, C., Kim, J.&nbsp;W., Radford, A., Sutskever, I. (2020). <em>Jukebox: A Generative Model for Music.</em> arXiv:2005.00341.</li>
+      <li>Borsos, Z. et&nbsp;al. (2022). <em>AudioLM: A Language Modeling Approach to Audio Generation.</em> arXiv:2209.03143.</li>
+      <li>Agostinelli, A. et&nbsp;al. (2023). <em>MusicLM: Generating Music From Text.</em> arXiv:2301.11325.</li>
+      <li>Copet, J. et&nbsp;al. (2023). <em>Simple and Controllable Music Generation (MusicGen).</em> arXiv:2306.05284.</li>
+      <li>Wang, C. et&nbsp;al. (2023). <em>Neural Codec Language Models are Zero-Shot Text to Speech Synthesizers (VALL-E).</em> arXiv:2301.02111.</li>
+      <li>Défossez, A. et&nbsp;al. (2022). <em>High Fidelity Neural Audio Compression (EnCodec).</em> arXiv:2210.13438.</li>
+      <li>Ho, J. &amp; Salimans, T. (2022). <em>Classifier-Free Diffusion Guidance.</em> arXiv:2207.12598.</li>
+      <li>Holtzman, A. et&nbsp;al. (2020). <em>The Curious Case of Neural Text Degeneration.</em> ICLR. (top-p / nucleus sampling.)</li>
+    </ol>
+  </div>
+</section>
+
+<footer>
+  <p>
+    Neural Sound Synthesis &middot; Part 10 — Language-Model Music Generation<br>
+    Part of the <a href="https://github.com/BrendanJamesLynskey/DSP_and_Music" target="_blank" rel="noopener">DSP &amp; Music</a> collection &middot;
+    single-file HTML/CSS/JS &middot; Web Audio API &middot; KaTeX &middot; no dependencies.
+  </p>
+</footer>
+
+<script>
+(function(){
+"use strict";
+// ── utilities ─────────────────────────────────────────────────
+const DPR=window.devicePixelRatio||1;
+function setupCanvas(c,w,h){ c.width=Math.round(w*DPR); c.height=Math.round(h*DPR); c.style.height=h+'px'; const x=c.getContext('2d'); x.setTransform(DPR,0,0,DPR,0,0); return x; }
+function fitWidth(c){ const r=c.parentElement.getBoundingClientRect(); return Math.max(320,Math.floor(r.width)); }
+let audioCtx=null;
+function actx(){ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); if(audioCtx.state==='suspended') audioCtx.resume(); return audioCtx; }
+function play(samples,sr){ const a=actx(); const b=a.createBuffer(1,samples.length,sr); b.getChannelData(0).set(samples); const s=a.createBufferSource(); s.buffer=b; const g=a.createGain(); g.gain.value=0.9; s.connect(g); g.connect(a.destination); s.start(); return s; }
+function fade(buf,n){ const N=buf.length,k=Math.min(n,N>>1); for(let i=0;i<k;i++){ buf[i]*=i/k; buf[N-1-i]*=i/k; } return buf; }
+
+const ACC=(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())||'#e8c256';
+
+// ── DEMO 1: transformer-over-tokens melody generator ──────────
+(function melodyLM(){
+  const c=document.getElementById('melViz'); if(!c) return;
+  const cap=document.getElementById('melCap'); const H=330;
+  let W=fitWidth(c); let ctx=setupCanvas(c,W,H);
+  const scaleEl=document.getElementById('melScale'), seedEl=document.getElementById('melSeed');
+  const tempEl=document.getElementById('melTemp'), tempV=document.getElementById('melTempV');
+  const SR2=22050, BASEDUR=0.30;
+  const SCALES={ penta:[0,2,4,7,9], minor:[0,2,3,5,7,8,10], dorian:[0,2,3,5,7,9,10], whole:[0,2,4,6,8,10] };
+  const ROOT=60, NP=8, REST=8, SUS=9, V=10;   // 0..7 pitch tokens, 8 rest, 9 sustain
+  // seed melodies in token space (0..9); work for any scale
+  const SEEDS={
+    folk:[ [0,1,2,3,2,1,0,8,2,3,4,3,2,9,0,8,1,2,3,2,0,8],
+           [0,2,4,5,4,2,0,1,0,8,4,4,2,0,9,8,2,1,0,9,8] ],
+    arp:[  [0,2,4,6,4,2,0,8,1,3,5,7,5,3,1,9,0,2,4,6,8],
+           [0,4,2,6,4,0,8,7,5,3,1,3,5,7,9,8,6,4,2,0,8] ]
+  };
+  function corpus(){ const k=seedEl.value; if(k==='both') return SEEDS.folk.concat(SEEDS.arp); return SEEDS[k]; }
+  function buildT(seeds){ const M=[]; for(let i=0;i<V;i++){ M.push(new Array(V).fill(0.05)); } // add-eps smoothing
+    seeds.forEach(s=>{ for(let i=0;i<s.length-1;i++){ M[s[i]][s[i+1]]+=1; } }); return M; }
+  function sampleNext(row,T){ const t=Math.max(0.05,T); const p=new Array(V); let Z=0;
+    for(let i=0;i<V;i++){ const v=Math.pow(row[i],1/t); p[i]=v; Z+=v; }
+    let r=Math.random()*Z; for(let i=0;i<V;i++){ r-=p[i]; if(r<=0) return i; } return V-1; }
+  let seq=[], notes=[], totalT=0, buf=new Float32Array(1);
+  function pitchMidi(tok){ const iv=SCALES[scaleEl.value]; const L=iv.length; return ROOT+iv[tok%L]+12*Math.floor(tok/L); }
+  function renderNotes(){ notes=[]; let t=0, last=null;
+    seq.forEach(tok=>{ if(tok===REST){ t+=BASEDUR; last=null; }
+      else if(tok===SUS){ if(last){ last.dur+=BASEDUR; } t+=BASEDUR; }
+      else { const n={midi:pitchMidi(tok),start:t,dur:BASEDUR,tok:tok}; notes.push(n); last=n; t+=BASEDUR; } });
+    totalT=Math.max(BASEDUR,t); renderBuffer(); }
+  function renderBuffer(){ const N=Math.max(1,Math.ceil((totalT+0.35)*SR2)); buf=new Float32Array(N);
+    notes.forEach(no=>{ const f=440*Math.pow(2,(no.midi-69)/12); const s0=Math.floor(no.start*SR2); const len=Math.floor(no.dur*SR2);
+      for(let i=0;i<len;i++){ const tt=i/SR2; const atk=Math.min(1,tt*80); const rel=(i>len-400)?(len-i)/400:1; const env=atk*Math.exp(-tt*2.6)*Math.max(0,rel);
+        const s=(Math.sin(2*Math.PI*f*tt)+0.4*Math.sin(2*Math.PI*2*f*tt)+0.18*Math.sin(2*Math.PI*3*f*tt))*0.2*env;
+        const idx=s0+i; if(idx>=0&&idx<N) buf[idx]+=s; } });
+    fade(buf,200); }
+  function generate(doPlay){ const T=+tempEl.value; const M=buildT(corpus()); let cur=0; seq=[cur];
+    for(let n=0;n<27;n++){ cur=sampleNext(M[cur],T); seq.push(cur); }
+    renderNotes(); draw(); if(doPlay) play(buf,SR2); }
+  const TOKHUE=t=>`hsl(${(t*40+15)|0},65%,58%)`;
+  function tokLabel(t){ if(t===REST) return 'R'; if(t===SUS) return '~'; return ''+t; }
+  function draw(){
+    ctx.fillStyle='#12141c'; ctx.fillRect(0,0,W,H);
+    const padX=18, plotW=W-2*padX;
+    // TOP: token stream
+    ctx.fillStyle='#8a8d9a'; ctx.font="11px 'Lucida Console',monospace"; ctx.textAlign='left';
+    ctx.fillText('TOKEN STREAM  z₁ z₂ … (sampled left → right, each conditioned on the last)', padX, 16);
+    const n=seq.length; const cw=plotW/n, ty=28, th=30;
+    for(let i=0;i<n;i++){ const tok=seq[i]; const x=padX+i*cw;
+      ctx.fillStyle = tok===REST?'rgba(138,141,154,0.35)' : tok===SUS?'rgba(232,194,86,0.35)' : TOKHUE(tok);
+      ctx.fillRect(x+1,ty,Math.max(1,cw-2),th);
+      if(cw>=12){ ctx.fillStyle='#0a0b0f'; ctx.font="10px 'Lucida Console',monospace"; ctx.textAlign='center'; ctx.fillText(tokLabel(tok),x+cw/2,ty+th/2+4); } }
+    ctx.textAlign='left';
+    // BOTTOM: piano roll
+    const ry0=76, rH=H-ry0-30;
+    ctx.fillStyle='#8a8d9a'; ctx.font="11px 'Lucida Console',monospace"; ctx.fillText('PIANO-ROLL of the rendered notes', padX, ry0-6);
+    ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.strokeRect(padX,ry0,plotW,rH);
+    let mn=127,mx=0; notes.forEach(no=>{ mn=Math.min(mn,no.midi); mx=Math.max(mx,no.midi); });
+    if(notes.length===0){ mn=60; mx=72; } if(mx-mn<6){ mx=mn+6; }
+    const span=mx-mn; const totT=Math.max(totalT,BASEDUR);
+    // faint horizontal gridlines per semitone
+    for(let m=mn;m<=mx;m++){ const y=ry0+rH-((m-mn)/span)*(rH-8)-4; ctx.strokeStyle=(m%12===0)?'rgba(139,123,240,0.18)':'rgba(255,255,255,0.03)'; ctx.beginPath(); ctx.moveTo(padX,y); ctx.lineTo(padX+plotW,y); ctx.stroke(); }
+    notes.forEach(no=>{ const x=padX+(no.start/totT)*plotW; const w=Math.max(3,(no.dur/totT)*plotW-1); const y=ry0+rH-((no.midi-mn)/span)*(rH-8)-4;
+      ctx.fillStyle=TOKHUE(no.tok); ctx.fillRect(x,y-4,w,7); ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.strokeRect(x,y-4,w,7); });
+    // temperature regime label
+    const T=+tempEl.value; let regime = T<0.35?'near-greedy · repetitive':(T<1.15?'creative · in-scale phrases':'high-entropy · wandering');
+    ctx.fillStyle=ACC; ctx.font="10px 'Lucida Console',monospace"; ctx.textAlign='right'; ctx.fillText('τ='+T.toFixed(2)+'  ('+regime+')', padX+plotW, ry0-6); ctx.textAlign='left';
+  }
+  seedEl.addEventListener('change',()=>generate(false));
+  scaleEl.addEventListener('change',()=>{ renderNotes(); draw(); });
+  tempEl.addEventListener('input',()=>{ tempV.textContent=(+tempEl.value).toFixed(2); draw(); });
+  document.getElementById('melGen').addEventListener('click',()=>generate(true));
+  document.getElementById('melPlay').addEventListener('click',()=>{ play(buf,SR2); });
+  window.addEventListener('resize',()=>{ W=fitWidth(c); ctx=setupCanvas(c,W,H); draw(); });
+  tempV.textContent=(+tempEl.value).toFixed(2);
+  generate(false);
+})();
+
+// ── DEMO 2: AudioLM semantic + acoustic hierarchy ─────────────
+(function hierarchy(){
+  const c=document.getElementById('hierViz'); if(!c) return;
+  const cap=document.getElementById('hierCap'); const H=320;
+  let W=fitWidth(c); let ctx=setupCanvas(c,W,H);
+  const qEl=document.getElementById('hierQ'), qV=document.getElementById('hierQV');
+  const progEl=document.getElementById('hierProg');
+  const T=24; let raf=null, playing=false;
+  let hoverR=-1, hoverC=-1;
+  const geom={x0:0,y0:0,cw:0,rh:0,rows:0};
+  function rowInfo(r,Nq){
+    if(r===0) return {name:'SEMANTIC (w2v-BERT)', col:'var(--accent2)', hue:255, desc:'Long-term structure: phonetics, melody, rhythm, prosody. Sampled slowly (~25 Hz), k-means quantised, generated FIRST across the whole clip. Sounds unintelligible alone — it is the plan, not the audio.'};
+    const q=r-1; const frac=q/Math.max(1,Nq-1);
+    let d; if(q===0) d='ACOUSTIC RVQ level 1 (coarsest) — the most perceptually significant residual: speaker identity, broad timbre, loudness. Decoded first of the acoustic block.';
+    else if(q===Nq-1) d='ACOUSTIC RVQ level '+(q+1)+' (finest) — the last small residual: fine spectral detail, brightness, "air". Refines what the coarse levels already fixed.';
+    else d='ACOUSTIC RVQ level '+(q+1)+' — an intermediate residual correcting the coarser levels, adding fidelity and timbral detail.';
+    return {name:'ACOUSTIC RVQ '+(q+1), hue:190-frac*160, desc:d};
+  }
+  function cellHue(r,Nq){ if(r===0) return 255; const q=r-1; const frac=q/Math.max(1,Nq-1); return 190-frac*150; }
+  function order(r,c,Nq){ if(r===0) return c; return T + (r-1)*T + c; } // semantic row first, then each acoustic level across time
+  function draw(){
+    const Nq=+qEl.value; qV.textContent=Nq; const rows=1+Nq; geom.rows=rows;
+    const total=T*rows; const reveal=Math.floor((+progEl.value/1000)*total);
+    ctx.fillStyle='#12141c'; ctx.fillRect(0,0,W,H);
+    const padL=120, padR=16, padT=30, padB=26;
+    const x0=padL, y0=padT; const cw=(W-padL-padR)/T; const rh=(H-padT-padB)/rows;
+    geom.x0=x0; geom.y0=y0; geom.cw=cw; geom.rh=rh;
+    ctx.font="10px 'Lucida Console',monospace"; ctx.textAlign='left';
+    ctx.fillStyle='#8a8d9a'; ctx.fillText('generation order:  semantic (whole row)  →  acoustic coarse → fine', x0, 16);
+    for(let r=0;r<rows;r++){
+      const info=rowInfo(r,Nq); const hue=cellHue(r,Nq);
+      ctx.fillStyle=r===0?'#8b7bf0':'#c9cbd6'; ctx.textAlign='right'; ctx.font="10px 'Lucida Console',monospace";
+      ctx.fillText(r===0?'semantic':('acoustic q'+r), padL-8, y0+r*rh+rh/2+3); ctx.textAlign='left';
+      for(let cc=0;cc<T;cc++){ const o=order(r,cc,Nq); const done=o<reveal; const now=(o===reveal-1);
+        const x=x0+cc*cw, y=y0+r*rh;
+        const lit = (r===hoverR&&cc===hoverC);
+        if(done){ ctx.fillStyle=`hsl(${hue|0},60%,${now?68:52}%)`; }
+        else { ctx.fillStyle='rgba(150,154,170,0.10)'; }
+        ctx.fillRect(x+1,y+1,cw-2,rh-2);
+        if(lit){ ctx.strokeStyle=ACC; ctx.lineWidth=2; ctx.strokeRect(x+1,y+1,cw-2,rh-2); ctx.lineWidth=1; }
+      }
+    }
+    // divider between semantic and acoustic
+    ctx.strokeStyle='rgba(232,194,86,0.35)'; ctx.setLineDash([4,3]); ctx.beginPath(); ctx.moveTo(x0,y0+rh); ctx.lineTo(x0+T*cw,y0+rh); ctx.stroke(); ctx.setLineDash([]);
+    // hover tooltip text
+    if(hoverR>=0&&hoverR<rows){ const info=rowInfo(hoverR,Nq); cap.textContent=info.desc; }
+  }
+  function stepAnim(){ let v=+progEl.value; v+=14; if(v>=1000){ v=1000; playing=false; } progEl.value=v; draw(); if(playing) raf=requestAnimationFrame(stepAnim); }
+  c.addEventListener('mousemove',e=>{ const r=c.getBoundingClientRect(); const mx=(e.clientX-r.left), my=(e.clientY-r.top);
+    const cc=Math.floor((mx-geom.x0)/geom.cw); const rr=Math.floor((my-geom.y0)/geom.rh);
+    if(rr>=0&&rr<geom.rows&&cc>=0&&cc<T){ hoverR=rr; hoverC=cc; } else { hoverR=-1; hoverC=-1; } draw(); });
+  c.addEventListener('mouseleave',()=>{ hoverR=-1; hoverC=-1; cap.textContent='Semantic tokens are generated first (whole row), then each acoustic RVQ level in turn, coarse to fine. Hover any cell to see what that level carries.'; draw(); });
+  qEl.addEventListener('input',draw); progEl.addEventListener('input',()=>{ playing=false; draw(); });
+  document.getElementById('hierPlay').addEventListener('click',()=>{ if(playing) return; progEl.value=0; playing=true; cancelAnimationFrame(raf); stepAnim(); });
+  window.addEventListener('resize',()=>{ W=fitWidth(c); ctx=setupCanvas(c,W,H); draw(); });
+  draw();
+})();
+
+// ── DEMO 3: MusicGen codebook interleaving patterns ───────────
+(function interleave(){
+  const c=document.getElementById('ilvViz'); if(!c) return;
+  const cap=document.getElementById('ilvCap'); const H=300;
+  let W=fitWidth(c); let ctx=setupCanvas(c,W,H);
+  const kEl=document.getElementById('ilvK'), kV=document.getElementById('ilvKV');
+  const stepEl=document.getElementById('ilvStep'), stepV=document.getElementById('ilvStepV');
+  const T=8; let pat='flatten', raf=null, playing=false;
+  const PATDESC={ flatten:'FLATTEN — all K codebooks of a frame, then the next frame. Exact factorisation but T×K steps: K× slower.',
+    parallel:'PARALLEL — all K codebooks of a frame predicted in ONE step: only T steps, but wrongly assumes the K residual codes are independent.',
+    delay:'DELAY — codebook k offset by k frames. Only T+K−1 steps, yet each fine code still sees its frame’s coarse codes. MusicGen’s trick.' };
+  function sched(k,t){ if(pat==='flatten') return t*(+kEl.value)+k; if(pat==='parallel') return t; return t+k; }
+  function maxStep(){ const K=+kEl.value; if(pat==='flatten') return T*K-1; if(pat==='parallel') return T-1; return T+K-1-1; }
+  const CBHUE=k=>`hsl(${(k*45+200)|0},60%,55%)`;
+  function draw(){
+    const K=+kEl.value; kV.textContent=K; const ms=maxStep(); stepEl.max=ms;
+    let step=Math.min(+stepEl.value,ms); stepEl.value=step; stepV.textContent=step;
+    ctx.fillStyle='#12141c'; ctx.fillRect(0,0,W,H);
+    const padL=90, padR=16, padT=44, padB=40;
+    const cw=(W-padL-padR)/T, rh=(H-padT-padB)/K;
+    ctx.font="10px 'Lucida Console',monospace"; ctx.textAlign='left'; ctx.fillStyle='#8a8d9a';
+    ctx.fillText('EnCodec grid: '+K+' codebooks × '+T+' frames', padL, 16);
+    const totalSteps=ms+1;
+    ctx.fillStyle=ACC; ctx.fillText('decoding steps for this pattern: '+totalSteps+'   ('+(pat==='flatten'?'T×K':pat==='parallel'?'T':'T+K−1')+')', padL, 32);
+    ctx.fillStyle='#8a8d9a'; ctx.textAlign='center'; ctx.font="9px 'Lucida Console',monospace";
+    for(let t=0;t<T;t++){ ctx.fillText('t'+(t+1), padL+t*cw+cw/2, padT-4); }
+    ctx.textAlign='right';
+    for(let k=0;k<K;k++){ ctx.fillStyle=k===0?'#c9cbd6':'#8a8d9a'; ctx.fillText('cb'+(k+1)+(k===0?' (coarse)':k===K-1?' (fine)':''), padL-6, padT+k*rh+rh/2+3); }
+    ctx.textAlign='center';
+    for(let k=0;k<K;k++){ for(let t=0;t<T;t++){ const s=sched(k,t); const x=padL+t*cw, y=padT+k*rh;
+      const done=s<step, now=(s===step), future=s>step;
+      if(now){ ctx.fillStyle=CBHUE(k); }
+      else if(done){ ctx.fillStyle=`hsla(${(k*45+200)|0},45%,42%,0.85)`; }
+      else { ctx.fillStyle='rgba(150,154,170,0.09)'; }
+      ctx.fillRect(x+1.5,y+1.5,cw-3,rh-3);
+      if(now){ ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.strokeRect(x+1.5,y+1.5,cw-3,rh-3); ctx.lineWidth=1; }
+      // step number small
+      if(cw>=26&&rh>=18){ ctx.fillStyle=done||now?'rgba(255,255,255,0.75)':'rgba(150,154,170,0.35)'; ctx.font="9px 'Lucida Console',monospace"; ctx.fillText(s, x+cw/2, y+rh/2+3); }
+    } }
+    ctx.textAlign='left'; ctx.fillStyle='#8a8d9a'; ctx.font="9px 'Lucida Console',monospace";
+    ctx.fillText('cell number = decoding step it is predicted at · bright = predicted NOW · dim = future', padL, H-14);
+  }
+  function stepAnim(){ let v=+stepEl.value; v+=1; if(v>maxStep()){ playing=false; } else { stepEl.value=v; } draw(); if(playing) raf=requestAnimationFrame(()=>setTimeout(stepAnim,220)); }
+  document.getElementById('ilvTabs').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; pat=b.dataset.p; [...e.currentTarget.children].forEach(x=>x.classList.toggle('on',x===b)); stepEl.value=0; cap.textContent=PATDESC[pat]; draw(); });
+  kEl.addEventListener('input',()=>{ stepEl.value=Math.min(+stepEl.value,maxStep()); draw(); });
+  stepEl.addEventListener('input',()=>{ playing=false; draw(); });
+  document.getElementById('ilvPlay').addEventListener('click',()=>{ if(playing) return; stepEl.value=0; playing=true; cancelAnimationFrame(raf); stepAnim(); });
+  window.addEventListener('resize',()=>{ W=fitWidth(c); ctx=setupCanvas(c,W,H); draw(); });
+  cap.textContent=PATDESC[pat]; draw();
+})();
+
+// ── hero animation: waveform morphing into spectrogram bars ───
+(function hero(){
+  const c=document.getElementById('heroCanvas'); if(!c) return;
+  const W=()=>Math.max(320,document.documentElement.clientWidth);
+  const H=()=>Math.max(400,Math.min(window.innerHeight,900));
+  let ctx=setupCanvas(c,W(),H());
+  const N=200; let ph=0; let last=performance.now();
+  function frame(now){
+    const w=W(),h=H(); if(c.width!==Math.round(w*DPR)||c.height!==Math.round(h*DPR)) ctx=setupCanvas(c,w,h);
+    const dt=Math.min(0.05,(now-last)/1000); last=now; ph+=dt*0.6;
+    ctx.fillStyle='rgba(10,11,15,0.22)'; ctx.fillRect(0,0,w,h);
+    const morph=0.5+0.5*Math.sin(ph*0.5); // 0 = waveform, 1 = bars
+    ctx.strokeStyle='rgba(74,199,232,0.75)'; ctx.lineWidth=1.6;
+    for(let i=0;i<N;i++){
+      const x=i/(N-1)*w;
+      const tt=i*0.12+ph*3;
+      const wav=Math.sin(tt)+0.5*Math.sin(tt*2.01)+0.3*Math.sin(tt*3.03);
+      const env=0.4+0.6*Math.abs(Math.sin(i*0.05+ph));
+      const barTop=h*0.5 - env*h*0.30*(0.5+0.5*Math.sin(i*0.7+ph*2));
+      const wy=h*0.5 - wav*h*0.09;
+      if(morph<0.5){ // waveform line
+        if(i===0){ctx.beginPath(); ctx.moveTo(x,wy);} else ctx.lineTo(x,wy);
+      }
+    }
+    if(morph<0.5) ctx.stroke();
+    if(morph>=0.5){ // spectrogram-ish bars
+      for(let i=0;i<N;i++){ const x=i/(N-1)*w; const env=Math.abs(Math.sin(i*0.09+ph*1.3))*Math.abs(Math.sin(i*0.3+ph)); const hh=env*h*0.34*(morph); ctx.fillStyle=`rgba(${60+env*120|0},${120+env*100|0},${200},${0.15+env*0.5})`; ctx.fillRect(x-1, h*0.5-hh, 3, hh*2); }
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+  window.addEventListener('resize',()=>{ ctx=setupCanvas(c,W(),H()); });
+})();
+
+// ── scroll-spy ────────────────────────────────────────────────
+(function toc(){
+  const links=document.querySelectorAll('nav#toc a');
+  const secs=Array.from(links).map(a=>document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  function onScroll(){ const y=window.scrollY+120; let k=0; for(let i=0;i<secs.length;i++){ if(secs[i].offsetTop<=y) k=i; } links.forEach(a=>a.classList.remove('active')); if(links[k]) links[k].classList.add('active'); }
+  window.addEventListener('scroll',onScroll,{passive:true}); onScroll();
+})();
+})();
+</script>
+</body>
+</html>
